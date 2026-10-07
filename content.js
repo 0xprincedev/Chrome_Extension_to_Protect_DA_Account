@@ -23,10 +23,10 @@ const NOT_MONEY_LABEL =
 const scaledFrom = new WeakMap();
 let applyDepth = 0;
 
-function isPaymentsPage() {
+function isTargetPage() {
   return (
     location.hostname === "app.dataannotation.tech" &&
-    /^\/workers\/payments(?:\/|$)/.test(location.pathname)
+    /^\/workers\/(?:payments|projects)(?:\/|$)/.test(location.pathname)
   );
 }
 
@@ -204,7 +204,7 @@ function rewriteTextNode(node) {
 }
 
 function processRoot(root) {
-  if (!root || !isPaymentsPage()) return;
+  if (!root || !isTargetPage()) return;
 
   const scope = root.nodeType === Node.TEXT_NODE ? root.parentNode : root;
   if (!scope) return;
@@ -235,12 +235,12 @@ function processRoot(root) {
 }
 
 function scan() {
-  if (!isPaymentsPage() || !document.body) return;
+  if (!isTargetPage() || !document.body) return;
   processRoot(document.body);
 }
 
 const observer = new MutationObserver((mutations) => {
-  if (applyDepth > 0 || !isPaymentsPage()) return;
+  if (applyDepth > 0 || !isTargetPage()) return;
   for (const mutation of mutations) {
     if (mutation.type === "characterData") {
       rewriteTextNode(mutation.target);
