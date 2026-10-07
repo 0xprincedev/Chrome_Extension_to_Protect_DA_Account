@@ -74,6 +74,7 @@ function formatNumber(numStr) {
   const originalPlaces = dot === -1 ? 0 : unsigned.length - dot - 1;
   const places = Math.max(originalPlaces, 2);
   let body = Math.abs(value).toFixed(places);
+  body = body.replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
 
   if (hadCommas) {
     const [intPart, frac] = body.split(".");
