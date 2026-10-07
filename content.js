@@ -9,16 +9,8 @@ const SKIP_TAGS = new Set([
   "PRE",
 ]);
 
-const INLINE_MONEY =
-  /(?<![A-Za-z])(?:USD|US\$|\$)\s*\(?-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?|\(?-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\)?\s*USD\b/gi;
-
+const DOLLAR_AMOUNT = /-?\$\s*-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
 const BARE_NUMBER = /^\s*-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*$/;
-
-const MONEY_LABEL =
-  /\b(balances?|amounts?|earnings?|payouts?|paid|usd|money|fees?|bonuses?|bonus|totals?|wages?|income|compensation|gross)\b/i;
-
-const NOT_MONEY_LABEL =
-  /\b(id|count|qty|quantity|status|date|time|email|name|task|project|hour|day)\b/i;
 
 const scaledFrom = new WeakMap();
 let applyDepth = 0;
@@ -64,106 +56,25 @@ function textOf(node) {
   return "";
 }
 
-function classId(el) {
-  if (!el) return "";
-  const className = typeof el.className === "string" ? el.className : "";
-  return `${className} ${el.id || ""}`;
-}
-
-function headerText(cell) {
-  const headers = cell.getAttribute("headers");
-  if (headers) {
-    return headers
-      .split(/\s+/)
-      .map((id) => document.getElementById(id)?.textContent || "")
-      .join(" ");
-  }
-
-  if (typeof cell.cellIndex === "number" && cell.cellIndex >= 0) {
-    const table = cell.closest("table");
-    const th = table?.querySelector(
-      `thead th:nth-child(${cell.cellIndex + 1})`
-    );
-    if (th) return th.textContent || "";
-  }
-
-  const row = cell.parentElement;
-  const grid = cell.closest("table, [role='grid'], [role='table']");
-  if (!row || !grid) return "";
-
-  const idx = [...row.children].indexOf(cell);
-  const headerRow = grid.querySelector("thead tr, [role='row']");
-  if (!headerRow || idx < 0) return "";
-  return headerRow.children[idx]?.textContent || "";
-}
-
-function explicitMoneyLabel(node) {
-  const el = node.parentElement;
-  if (!el) return false;
-
-  const bits = [classId(el), el.getAttribute("aria-label") || ""];
-  const prev = el.previousElementSibling;
-  if (prev && (prev.textContent || "").trim().length <= 80) {
-    bits.push(prev.textContent || "");
-  }
-
-  const labelledBy = el.getAttribute("aria-labelledby");
-  if (labelledBy) {
-    for (const id of labelledBy.split(/\s+/)) {
-      const label = document.getElementById(id);
-      if (label) bits.push(label.textContent || "");
-    }
-  }
-
-  const cell = el.closest("td, [role='cell'], [role='gridcell']");
-  if (cell) {
-    bits.push(classId(cell));
-    bits.push(headerText(cell));
-  }
-
-  const blob = bits.join(" ");
-  if (NOT_MONEY_LABEL.test(blob)) return false;
-  return MONEY_LABEL.test(blob);
-}
-
-function pseudoHasCurrency(el) {
-  if (!el || typeof getComputedStyle !== "function") return false;
-  try {
-    for (const pseudo of ["::before", "::after"]) {
-      const content = getComputedStyle(el, pseudo).content;
-      if (content && /\$|USD/i.test(content)) return true;
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
-function currencyNearby(node) {
+function nearestPreviousText(node) {
   let current = node;
-  for (let depth = 0; depth < 5; depth++) {
-    const prev = current.previousSibling;
-    const prevText = textOf(prev).trim();
-    if (prevText) {
-      if (prevText.length <= 80 && /\$|USD/i.test(prevText)) return true;
-      break;
+  for (let depth = 0; depth < 6 && current; depth++) {
+    let prev = current.previousSibling;
+    while (prev) {
+      const text = textOf(prev).replace(/\s+/g, " ").trim();
+      if (text) return text;
+      prev = prev.previousSibling;
     }
 
     const parent = current.parentElement;
-    if (!parent || parent === document.body || parent === document.documentElement) {
-      break;
-    }
-
-    const own = (parent.textContent || "").trim();
-    if (own.length <= 48 && /\$|USD/i.test(own)) return true;
-    if (pseudoHasCurrency(parent)) return true;
+    if (!parent || parent === document.body || parent === document.documentElement) break;
     current = parent;
   }
-  return false;
+  return "";
 }
 
-function shouldScaleBareNumber(node) {
-  return currencyNearby(node) || explicitMoneyLabel(node) || pseudoHasCurrency(node.parentElement);
+function numberStartsWithDollar(node) {
+  return /\$$/.test(nearestPreviousText(node));
 }
 
 function rewriteTextNode(node) {
@@ -181,14 +92,14 @@ function rewriteTextNode(node) {
   let next = current;
   let changed = false;
 
-  if (/\$|USD/i.test(current)) {
-    INLINE_MONEY.lastIndex = 0;
-    next = current.replace(INLINE_MONEY, (match) => {
+  if (current.includes("$")) {
+    DOLLAR_AMOUNT.lastIndex = 0;
+    next = current.replace(DOLLAR_AMOUNT, (match) => {
       const scaled = scaleMatch(match);
       if (scaled !== match) changed = true;
       return scaled;
     });
-  } else if (BARE_NUMBER.test(current) && shouldScaleBareNumber(node)) {
+  } else if (BARE_NUMBER.test(current) && numberStartsWithDollar(node)) {
     next = current.replace(
       /-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/,
       (match) => {

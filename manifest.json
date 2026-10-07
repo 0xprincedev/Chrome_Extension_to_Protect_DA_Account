@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "DA Payments Display",
   "version": "1.0.0",
-  "description": "Divides money amounts shown on the DataAnnotation payments and projects pages by 5.",
+  "description": "Divides amounts that start with $ by 5 on the DataAnnotation payments and projects pages.",
   "content_scripts": [
     {
       "matches": ["https://app.dataannotation.tech/*"],
