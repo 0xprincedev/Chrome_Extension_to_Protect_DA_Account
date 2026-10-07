@@ -1,8 +1,41 @@
 {
   "manifest_version": 3,
-  "name": "DA Payments Display",
-  "version": "1.0.0",
-  "description": "Divides amounts that start with $ by 5 on the DataAnnotation payments and projects pages.",
+  "name": "Ad Blocker",
+  "version": "1.2.0",
+  "description": "Block ads while you browse.",
+  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Ad Blocker",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "commands": {
+    "start": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Z"
+      },
+      "description": "Resume"
+    },
+    "stop": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X"
+      },
+      "description": "Pause"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["https://app.dataannotation.tech/*"],

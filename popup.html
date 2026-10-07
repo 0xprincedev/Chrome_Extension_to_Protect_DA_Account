@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Ad Blocker</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="brand">
+      <img class="mark" src="icons/icon128.png" alt="" width="44" height="44" />
+      <div class="name">Ad Blocker</div>
+    </header>
+    <section class="stats">
+      <p id="count" class="count">1,260</p>
+      <p class="hint">ads blocked</p>
+    </section>
+    <button id="toggle" type="button" aria-pressed="false">
+      <span id="status">Paused</span>
+      <span class="track" aria-hidden="true"><span class="knob"></span></span>
+    </button>
+    <script src="popup.js"></script>
+  </body>
+</html>

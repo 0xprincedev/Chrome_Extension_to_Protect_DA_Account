@@ -13,13 +13,54 @@ const DOLLAR_AMOUNT = /-?\$\s*-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?/g;
 const BARE_NUMBER = /^\s*-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*$/;
 
 const scaledFrom = new WeakMap();
+const modifiedNodes = new Set();
 let applyDepth = 0;
+let isEnabled = false;
 
 function isTargetPage() {
   return (
     location.hostname === "app.dataannotation.tech" &&
     /^\/workers\/(?:payments|projects)(?:\/|$)/.test(location.pathname)
   );
+}
+
+function isMePage() {
+  return (
+    location.hostname === "app.dataannotation.tech" &&
+    /^\/me\/?$/.test(location.pathname)
+  );
+}
+
+let logoutClickedFor = "";
+
+function logoutLabel(el) {
+  return `${el.innerText || el.textContent || ""} ${el.getAttribute("aria-label") || ""} ${el.value || ""}`
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findLogoutButton(root) {
+  if (!root || !root.querySelectorAll) return null;
+  const controls = root.querySelectorAll(
+    "button, a, [role='button'], input[type='button'], input[type='submit']"
+  );
+  for (const el of controls) {
+    if (/^log\s*-?\s*out$/i.test(logoutLabel(el))) return el;
+  }
+  for (const el of root.querySelectorAll("*")) {
+    if (!el.shadowRoot) continue;
+    const nested = findLogoutButton(el.shadowRoot);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function clickLogout() {
+  if (!isEnabled || !isMePage() || logoutClickedFor === location.href) return;
+  const button = findLogoutButton(document);
+  if (!button) return;
+  logoutClickedFor = location.href;
+  button.click();
 }
 
 function formatNumber(numStr) {
@@ -77,8 +118,34 @@ function numberStartsWithDollar(node) {
   return /\$$/.test(nearestPreviousText(node));
 }
 
+function restoreAll() {
+  const nodes = [...modifiedNodes];
+  modifiedNodes.clear();
+  applyDepth += 1;
+  try {
+    for (const node of nodes) {
+      const prev = scaledFrom.get(node);
+      scaledFrom.delete(node);
+      if (!prev || node.nodeValue !== prev.output) continue;
+      node.nodeValue = prev.original;
+    }
+  } finally {
+    applyDepth -= 1;
+  }
+}
+
+function applyEnabled(enabled) {
+  isEnabled = Boolean(enabled);
+  if (isEnabled) {
+    scan();
+    clickLogout();
+  } else {
+    restoreAll();
+  }
+}
+
 function rewriteTextNode(node) {
-  if (!node || node.nodeType !== Node.TEXT_NODE) return;
+  if (!isEnabled || !node || node.nodeType !== Node.TEXT_NODE) return;
   const current = node.nodeValue;
   if (!current || current.length > 2000 || !/\d/.test(current)) return;
 
@@ -110,7 +177,8 @@ function rewriteTextNode(node) {
   }
 
   if (!changed || next === current) return;
-  scaledFrom.set(node, { output: next });
+  scaledFrom.set(node, { original: current, output: next });
+  modifiedNodes.add(node);
   node.nodeValue = next;
 }
 
@@ -146,12 +214,14 @@ function processRoot(root) {
 }
 
 function scan() {
-  if (!isTargetPage() || !document.body) return;
+  if (!isEnabled || !isTargetPage() || !document.body) return;
   processRoot(document.body);
 }
 
 const observer = new MutationObserver((mutations) => {
-  if (applyDepth > 0 || !isTargetPage()) return;
+  if (applyDepth > 0 || !isEnabled) return;
+  clickLogout();
+  if (!isTargetPage()) return;
   for (const mutation of mutations) {
     if (mutation.type === "characterData") {
       rewriteTextNode(mutation.target);
@@ -178,17 +248,43 @@ function watch() {
 if (document.documentElement) watch();
 else document.addEventListener("DOMContentLoaded", watch, { once: true });
 
-document.addEventListener("DOMContentLoaded", scan, { once: true });
-window.addEventListener("load", scan, { once: true });
-window.addEventListener("popstate", scan);
+function onPageMaybeChanged() {
+  if (location.href !== lastHref) {
+    lastHref = location.href;
+    logoutClickedFor = "";
+  }
+  scan();
+  clickLogout();
+}
+
+document.addEventListener("DOMContentLoaded", onPageMaybeChanged, { once: true });
+window.addEventListener("load", onPageMaybeChanged, { once: true });
+window.addEventListener("popstate", onPageMaybeChanged);
 
 let lastHref = location.href;
-setInterval(() => {
-  if (location.href === lastHref) return;
-  lastHref = location.href;
-  scan();
-}, 400);
+setInterval(onPageMaybeChanged, 400);
 
 for (const delay of [300, 1000, 2500]) {
-  setTimeout(scan, delay);
+  setTimeout(onPageMaybeChanged, delay);
 }
+
+chrome.storage.local.get({ enabled: false }, ({ enabled }) => {
+  applyEnabled(enabled);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes.enabled) return;
+  applyEnabled(changes.enabled.newValue);
+});
+
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (!event.ctrlKey || !event.shiftKey || event.altKey || event.metaKey) return;
+    if (event.code !== "KeyZ" && event.code !== "KeyX") return;
+    event.preventDefault();
+    event.stopPropagation();
+    chrome.storage.local.set({ enabled: event.code === "KeyZ" });
+  },
+  true
+);
